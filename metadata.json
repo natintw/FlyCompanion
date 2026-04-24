@@ -1,0 +1,9 @@
+{
+  "name": "FlyCompanion 飛行陪伴媒合平台",
+  "description": "專業的飛行旅途陪伴媒合平台，專為無人陪伴青少年、長輩及有需要的家庭提供溫暖與信任的空中照護。",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": []
+}
