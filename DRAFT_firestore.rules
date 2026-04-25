@@ -1,0 +1,153 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function getUserData(uid) {
+       return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+    
+    function isVerifiedUser(uid) {
+       return getUserData(uid).kycStatus == 'verified';
+    }
+
+    // --- Validations ---
+    function isValidUser(data) {
+      return data.keys().hasAll(['fullName', 'email', 'role', 'kycStatus', 'createdAt']) && 
+             data.keys().size() <= 10 &&
+             data.fullName is string && data.fullName.size() <= 100 &&
+             data.email is string && data.email.size() <= 100 &&
+             data.role in ['requester', 'companion'] &&
+             data.kycStatus in ['unverified', 'pending', 'verified'] &&
+             data.createdAt == request.time;
+    }
+
+    function isValidCaretaker(data) {
+      return data.keys().hasAll(['fullName', 'relationship', 'birthDate']) &&
+             data.keys().size() <= 6 &&
+             data.fullName is string && data.fullName.size() <= 100 &&
+             data.relationship is string && data.relationship.size() <= 50 &&
+             data.birthDate is string && data.birthDate.size() <= 20;
+    }
+
+    function isValidTrip(data) {
+      return data.keys().hasAll(['requesterId', 'caretakerProfileId', 'originAirport', 'destinationAirport', 'flightDate', 'status', 'createdAt']) &&
+             data.keys().size() <= 15 &&
+             data.requesterId == request.auth.uid &&
+             data.originAirport is string && data.originAirport.size() == 3 &&
+             data.destinationAirport is string && data.destinationAirport.size() == 3 &&
+             data.status in ['open', 'matched', 'completed', 'cancelled'] &&
+             data.createdAt == request.time;
+    }
+
+    function isValidMatch(data) {
+      return data.keys().hasAll(['tripId', 'requesterId', 'companionId', 'agreedFee', 'status', 'createdAt']) &&
+             data.keys().size() <= 10 &&
+             data.agreedFee is number && data.agreedFee >= 0 &&
+             data.status in ['pending', 'confirmed', 'in-progress', 'arrived', 'completed', 'cancelled'] &&
+             data.createdAt == request.time;
+    }
+
+    // --- Rules ---
+    
+    // Users Collection
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && resource.data.kycStatus == 'verified';
+      
+      allow create: if isOwner(userId) && isValidUser(incoming()) && 
+                       incoming().kycStatus == 'unverified' &&
+                       incoming().email == request.auth.token.email; // Email must match auth token
+                       
+      allow update: if isOwner(userId) && (
+        // Action: Update Profile (PII)
+        (isValidUser(incoming()) && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'phone']) &&
+         incoming().role == existing().role &&
+         incoming().kycStatus == existing().kycStatus &&
+         incoming().email == existing().email) // Email is immutable
+      );
+      
+      // Caretakers Subcollection
+      match /caretakers/{caretakerId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidCaretaker(incoming());
+        allow update: if isOwner(userId) && isValidCaretaker(incoming());
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // Trips Collection
+    match /trips/{tripId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && resource.data.status == 'open'; // Public search
+      
+      allow create: if isEmailVerified() && isVerifiedUser(request.auth.uid) && isValidTrip(incoming());
+      
+      allow update: if isSignedIn() && (
+        // Action: Requester updates trip
+        (isOwner(existing().requesterId) && 
+         isValidTrip(incoming()) && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['originAirport', 'destinationAirport', 'flightDate', 'flightNumber', 'careRequirements', 'budgetMin', 'budgetMax', 'status'])) ||
+        // Action: System/Match updates status
+        (incoming().diff(existing()).affectedKeys().hasOnly(['status']))
+      );
+      
+      allow delete: if isOwner(existing().requesterId) && existing().status == 'open';
+
+      // Matches Subcollection
+      match /matches/{matchId} {
+        function isParticipant() {
+          return isOwner(existing().requesterId) || isOwner(existing().companionId);
+        }
+
+        allow read: if isSignedIn() && isParticipant();
+        
+        allow create: if isEmailVerified() && 
+                        isVerifiedUser(request.auth.uid) && 
+                        isValidMatch(incoming()) &&
+                        incoming().companionId == request.auth.uid; // Only companion can apply
+                        
+        allow update: if isSignedIn() && isParticipant() && (
+          // Action: Confirm Match (by Requester)
+          (isOwner(existing().requesterId) && 
+           incoming().status == 'confirmed' && 
+           incoming().diff(existing()).affectedKeys().hasOnly(['status', 'depositPaidAt'])) ||
+          
+          // Action: Update Progress (by Companion)
+          (isOwner(existing().companionId) && 
+           incoming().status in ['in-progress', 'arrived', 'completed'] &&
+           incoming().diff(existing()).affectedKeys().hasOnly(['status']))
+        );
+      }
+    }
+  }
+}

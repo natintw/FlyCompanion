@@ -1,0 +1,121 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function getUserData(uid) {
+       return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+    
+    function isVerifiedUser(uid) {
+       // Currently returns true if user is logged in, but we might want to check roles later
+       return isSignedIn();
+    }
+
+    // --- Validations ---
+    function isValidUser(data) {
+      return data.keys().hasAll(['fullName', 'email', 'role', 'kycStatus', 'createdAt']) && 
+             data.keys().size() <= 20 &&
+             data.fullName is string && data.fullName.size() <= 100 &&
+             data.email is string && data.email.size() <= 100 &&
+             data.role in ['requester', 'companion', 'both', 'none'] &&
+             data.kycStatus in ['not_started', 'pending', 'verified', 'rejected'] &&
+             (data.createdAt == request.time || data.createdAt is string);
+    }
+
+    function isValidCaretaker(data) {
+      return data.keys().hasAll(['fullName', 'relationship', 'birthDate', 'requesterId']) &&
+             data.fullName is string &&
+             data.relationship is string &&
+             data.birthDate is string &&
+             data.requesterId == request.auth.uid;
+    }
+
+    function isValidTrip(data) {
+      return data.keys().hasAll(['requesterId', 'caretakingProfileId', 'originAirport', 'destinationAirport', 'flightDate', 'status', 'createdAt']) &&
+             data.keys().size() <= 30 &&
+             data.requesterId == request.auth.uid &&
+             data.originAirport is string && data.originAirport.size() == 3 &&
+             data.destinationAirport is string && data.destinationAirport.size() == 3 &&
+             data.status in ['open', 'matched', 'completed', 'cancelled'] &&
+             (data.createdAt == request.time || data.createdAt is string);
+    }
+
+    function isValidMatch(data) {
+      return data.keys().hasAll(['tripId', 'requesterId', 'companionId', 'agreedFee', 'status', 'createdAt']) &&
+             data.keys().size() <= 10 &&
+             data.agreedFee is number && data.agreedFee >= 0 &&
+             data.status in ['pending', 'confirmed', 'in-progress', 'arrived', 'completed', 'cancelled'] &&
+             data.createdAt == request.time;
+    }
+
+    // --- Rules ---
+    
+    // Users Collection
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+    }
+
+    // Caretakers Collection (Top Level)
+    match /caretakers/{caretakerId} {
+      allow read: if isSignedIn() && (isOwner(existing().requesterId) || true); // Allow reading for now
+      allow create: if isSignedIn() && isOwner(incoming().requesterId) && isValidCaretaker(incoming());
+      allow update: if isSignedIn() && isOwner(existing().requesterId) && isValidCaretaker(incoming());
+      allow delete: if isSignedIn() && isOwner(existing().requesterId);
+    }
+
+    // Trips Collection
+    match /trips/{tripId} {
+      allow get: if true;
+      allow list: if true; 
+      
+      allow create: if isSignedIn();
+      
+      allow update: if isSignedIn() && (
+        isOwner(existing().requesterId) || 
+        incoming().status in ['pending', 'confirmed', 'in-progress', 'arrived', 'completed', 'cancelled']
+      );
+      
+      allow delete: if isOwner(existing().requesterId);
+    }
+
+    // Matches Collection (Root)
+    match /matches/{matchId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn(); // Simplified for now
+    }
+  }
+}

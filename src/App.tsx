@@ -7,10 +7,13 @@ import { FindTrips } from './pages/FindTrips';
 import { CreateTrip } from './pages/CreateTrip';
 import { Auth } from './pages/Auth';
 
+import { AuthProvider } from './context/AuthContext';
+
 export default function App() {
   return (
     <Router>
-      <div className="flex min-h-screen flex-col">
+      <AuthProvider>
+        <div className="flex min-h-screen flex-col">
         <Navbar />
         <main className="flex-1">
           <Routes>
@@ -23,6 +26,7 @@ export default function App() {
         </main>
         <Footer />
       </div>
+      </AuthProvider>
     </Router>
   );
 }

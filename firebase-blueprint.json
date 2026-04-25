@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile information and status",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["requester", "companion"] },
+        "kycStatus": { "type": "string", "enum": ["unverified", "pending", "verified"] },
+        "ratingAvg": { "type": "number" },
+        "ratingCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fullName", "email", "role", "kycStatus", "createdAt"]
+    },
+    "Caretaker": {
+      "title": "Caretaker Profile",
+      "description": "Information about the person needing care",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string" },
+        "relationship": { "type": "string" },
+        "birthDate": { "type": "string", "format": "date" },
+        "notes": { "type": "string" }
+      },
+      "required": ["fullName", "relationship", "birthDate"]
+    },
+    "Trip": {
+      "title": "Trip Request",
+      "description": "A request for flight companionship",
+      "type": "object",
+      "properties": {
+        "requesterId": { "type": "string" },
+        "caretakerProfileId": { "type": "string" },
+        "originAirport": { "type": "string" },
+        "destinationAirport": { "type": "string" },
+        "flightDate": { "type": "string", "format": "date" },
+        "flightNumber": { "type": "string" },
+        "careRequirements": {
+          "type": "object",
+          "properties": {
+            "sideBySide": { "type": "boolean" },
+            "assistMeal": { "type": "boolean" },
+            "assistToilet": { "type": "boolean" },
+            "assistImmigration": { "type": "boolean" },
+            "handoffAtDestination": { "type": "boolean" }
+          }
+        },
+        "budgetMin": { "type": "number" },
+        "budgetMax": { "type": "number" },
+        "budgetOption": { "type": "string", "enum": ["range", "open"] },
+        "status": { "type": "string", "enum": ["open", "matched", "completed", "cancelled"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["requesterId", "caretakerProfileId", "originAirport", "destinationAirport", "flightDate", "status", "createdAt"]
+    },
+    "Match": {
+      "title": "Trip Match",
+      "description": "A confirmed companionship agreement",
+      "type": "object",
+      "properties": {
+        "tripId": { "type": "string" },
+        "requesterId": { "type": "string" },
+        "companionId": { "type": "string" },
+        "agreedFee": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "in-progress", "arrived", "completed", "cancelled"] },
+        "depositPaidAt": { "type": "string", "format": "date-time" },
+        "handoffToken": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["tripId", "requesterId", "companionId", "agreedFee", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "users/{userId}/caretakers/{caretakerId}": {
+      "schema": "Caretaker",
+      "description": "Caretaker profiles for a requester"
+    },
+    "trips/{tripId}": {
+      "schema": "Trip",
+      "description": "Public trip requests"
+    },
+    "trips/{tripId}/matches/{matchId}": {
+      "schema": "Match",
+      "description": "Matches for a specific trip"
+    }
+  }
+}

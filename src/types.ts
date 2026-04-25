@@ -9,7 +9,8 @@ export type KYCStatus = 'pending' | 'verified' | 'rejected' | 'not_started';
 
 export interface User {
   id: string;
-  phone: string;
+  phone?: string;
+  phoneVerified?: boolean;
   fullName: string;
   email: string;
   role: UserRole;
@@ -44,6 +45,8 @@ export interface Trip {
   originAirport: string; // IATA code
   destinationAirport: string; // IATA code
   flightDate: string;
+  flightDateEnd?: string | null;
+  isDateRange?: boolean;
   flightNumber?: string;
   careRequirements: {
     sideBySide: boolean;

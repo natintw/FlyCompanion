@@ -1,51 +1,165 @@
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plane, 
   User, 
   Calendar, 
-  MapPin, 
-  ArrowRight, 
   CheckCircle2, 
   ChevronRight, 
   ChevronLeft, 
-  Wallet, 
   ClipboardCheck, 
-  MessageSquare 
+  MapPin,
+  ArrowRight,
+  Settings
 } from 'lucide-react';
-import { cn, formatCurrency } from '../lib/utils';
+import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { cn } from '../lib/utils';
+import { useAuth } from '../context/AuthContext';
+import { dbService } from '../services/db';
+
+import { where } from 'firebase/firestore';
+import { CaretakingProfile } from '../types';
 
 type Step = 'caretaker' | 'flight' | 'requirements' | 'budget' | 'confirm';
 
-const STEPS: { id: Step; label: string }[] = [
-  { id: 'caretaker', label: '對象選擇' },
-  { id: 'flight', label: '旅程資訊' },
-  { id: 'requirements', label: '照護需求' },
-  { id: 'budget', label: '費用設定' },
-  { id: 'confirm', label: '完成發布' },
-];
-
 export function CreateTrip() {
+  const { t } = useTranslation();
+  const { user, profile } = useAuth();
+  const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState<Step>('caretaker');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const STEPS: { id: Step; label: string }[] = [
+    { id: 'caretaker', label: t('trips.createTitle') },
+    { id: 'flight', label: t('trips.date') },
+    { id: 'requirements', label: t('trips.requirements') },
+    { id: 'budget', label: t('trips.budget') },
+    { id: 'confirm', label: t('common.confirm') },
+  ];
+  
+  useEffect(() => {
+    if (!user) {
+      navigate('/auth');
+    }
+  }, [user, navigate]);
+
   const [formData, setFormData] = useState({
+    caretakingProfileId: '',
     caretakerName: '',
-    relation: '',
     origin: '',
     destination: '',
     date: '',
+    dateEnd: '',
+    isRange: false,
     flightNum: '',
     requirements: {
       sideBySide: false,
       assistMeal: false,
       assistToilet: false,
       assistImmigration: false,
-      handoff: false,
+      handoffAtDestination: false,
     },
     budgetOption: 'range' as 'range' | 'open',
     budgetMin: 5000,
     budgetMax: 10000,
     memo: '',
   });
+
+  const [caretakers, setCaretakers] = useState<CaretakingProfile[]>([]);
+  const [isCaretakerModalOpen, setIsCaretakerModalOpen] = useState(false);
+  const [editingCaretaker, setEditingCaretaker] = useState<CaretakingProfile | null>(null);
+  const [caretakerForm, setCaretakerForm] = useState({
+    fullName: '',
+    relationship: '',
+    birthDate: '',
+  });
+
+  useEffect(() => {
+    if (!user) return;
+    const unsubscribe = dbService.subscribeToCollection<CaretakingProfile>(
+      'caretakers',
+      [where('requesterId', '==', user.uid)],
+      (data) => setCaretakers(data)
+    );
+    return () => unsubscribe();
+  }, [user]);
+
+  const handleCaretakerSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    
+    const caretakerData = {
+      ...caretakerForm,
+      requesterId: user.uid,
+      emergencyContact: { name: '', phone: '' }, // Simplified for now
+    };
+
+    try {
+      if (editingCaretaker) {
+        await dbService.updateDocument('caretakers', editingCaretaker.id, caretakerData);
+      } else {
+        await dbService.createDocument('caretakers', caretakerData);
+      }
+      setIsCaretakerModalOpen(false);
+      setEditingCaretaker(null);
+      setCaretakerForm({ fullName: '', relationship: '', birthDate: '' });
+    } catch (error) {
+      console.error('Failed to save caretaker:', error);
+    }
+  };
+
+  const openEditCaretaker = (e: React.MouseEvent, c: CaretakingProfile) => {
+    e.stopPropagation();
+    setEditingCaretaker(c);
+    setCaretakerForm({
+      fullName: c.fullName,
+      relationship: c.relationship,
+      birthDate: c.birthDate,
+    });
+    setIsCaretakerModalOpen(true);
+  };
+
+  const handlePublish = async () => {
+    if (!user) return;
+    if (!formData.caretakingProfileId) {
+      alert('請先選擇陪伴對象');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      let instructions = formData.memo;
+      if (profile?.kycStatus !== 'verified') {
+        const warning = "⚠️ [系統提示] 此發布者尚未完成實名驗證 (KYC)，請自行評估交易安全性。";
+        instructions = instructions ? `${warning}\n\n${instructions}` : warning;
+      }
+
+      const tripData = {
+        requesterId: user.uid,
+        caretakingProfileId: formData.caretakingProfileId,
+        originAirport: formData.origin.toUpperCase(),
+        destinationAirport: formData.destination.toUpperCase(),
+        flightDate: formData.date,
+        flightDateEnd: formData.isRange ? formData.dateEnd : null,
+        isDateRange: formData.isRange,
+        flightNumber: formData.flightNum.toUpperCase(),
+        careRequirements: formData.requirements,
+        budgetMin: formData.budgetMin,
+        budgetMax: formData.budgetMax,
+        budgetOption: formData.budgetOption,
+        specialInstructions: instructions,
+        status: 'open',
+      };
+      const tripId = await dbService.createDocument('trips', tripData);
+      if (tripId) {
+        navigate('/dashboard');
+      }
+    } catch (error) {
+      console.error('Failed to publish trip:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const stepIndex = STEPS.findIndex(s => s.id === currentStep);
 
@@ -113,23 +227,58 @@ export function CreateTrip() {
                 {currentStep === 'caretaker' && (
                   <div className="space-y-10">
                     <div className="space-y-4">
-                      <h2 className="text-2xl font-serif text-slate-900 font-light italic">誰需要陪伴？</h2>
-                      <p className="text-slate-500 text-sm font-medium">請選擇或建立新的被照護者資料，以便陪伴者了解情況。</p>
+                      <h2 className="text-2xl font-serif text-slate-900 font-light italic">{t('trips.create.who')}</h2>
+                      <p className="text-slate-500 text-sm font-medium">{t('trips.create.whoDesc')}</p>
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="p-8 rounded-[2rem] glass border border-white/50 hover:bg-white/60 transition-all cursor-pointer group">
-                        <div className="h-14 w-14 rounded-2xl glass flex items-center justify-center mb-6 group-hover:bg-primary group-hover:text-white transition-colors shadow-sm">
-                          <User className="h-7 w-7" />
+                      {caretakers.map(c => (
+                        <div 
+                          key={c.id}
+                          onClick={() => setFormData({...formData, caretakingProfileId: c.id, caretakerName: c.fullName})}
+                          className={cn(
+                            "relative p-8 rounded-[2rem] glass border transition-all cursor-pointer group",
+                            formData.caretakingProfileId === c.id ? "border-primary bg-primary/5 shadow-lg" : "border-white/50 hover:bg-white/60"
+                          )}
+                        >
+                          <div className={cn(
+                            "h-14 w-14 rounded-2xl flex items-center justify-center mb-6 transition-colors shadow-sm",
+                            formData.caretakingProfileId === c.id ? "bg-primary text-white" : "glass group-hover:bg-primary group-hover:text-white"
+                          )}>
+                            <User className="h-7 w-7" />
+                          </div>
+                          <div className="font-bold text-slate-800 text-xl tracking-tight">{c.fullName}</div>
+                          <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">
+                            {c.relationship} · {c.birthDate}
+                          </div>
+                          
+                          <button 
+                            onClick={(e) => openEditCaretaker(e, c)}
+                            className="absolute top-6 right-6 p-2 text-slate-300 hover:text-slate-600 transition-colors"
+                          >
+                            <Settings className="h-4 w-4" />
+                          </button>
+
+                          {formData.caretakingProfileId === c.id && (
+                            <div className="absolute -top-2 -right-2 bg-primary text-white p-1 rounded-full shadow-lg">
+                              <CheckCircle2 className="h-4 w-4" />
+                            </div>
+                          )}
                         </div>
-                        <div className="font-bold text-slate-800 text-xl tracking-tight">李小華</div>
-                        <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">兒子 · 2018/05/20 生</div>
-                      </div>
-                      <button className="flex flex-col items-center justify-center p-8 rounded-[2rem] border-2 border-dashed border-white/40 glass hover:border-primary/50 hover:bg-primary/5 transition-all text-slate-400 hover:text-primary">
+                      ))}
+                      
+                      <button 
+                        onClick={() => {
+                          setEditingCaretaker(null);
+                          setCaretakerForm({ fullName: '', relationship: '', birthDate: '' });
+                          setIsCaretakerModalOpen(true);
+                        }}
+                        className="flex flex-col items-center justify-center p-8 rounded-[2rem] border-2 border-dashed border-white/40 glass hover:border-primary/50 hover:bg-primary/5 transition-all text-slate-400 hover:text-primary min-h-[160px]"
+                      >
                         <div className="h-12 w-12 rounded-full glass flex items-center justify-center mb-3">
                           <span className="text-3xl font-light">+</span>
                         </div>
-                        <span className="text-sm font-bold tracking-tight">建立新對象</span>
+                        <span className="text-sm font-bold tracking-tight">{t('trips.create.addNew')}</span>
                       </button>
                     </div>
                   </div>
@@ -138,42 +287,85 @@ export function CreateTrip() {
                 {currentStep === 'flight' && (
                   <div className="space-y-10">
                     <div className="space-y-4">
-                      <h2 className="text-2xl font-serif text-slate-900 font-light italic">旅程細節</h2>
-                      <p className="text-slate-500 text-sm font-medium">輸入航班資訊，我們將優先為您匹配同班機的陪伴者。</p>
+                      <h2 className="text-2xl font-serif text-slate-900 font-light italic">{t('trips.date')}</h2>
+                      <p className="text-slate-500 text-sm font-medium">{t('trips.create.flightDesc')}</p>
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      <div className="space-y-3">
-                        <label className="text-xs font-bold uppercase tracking-widest text-slate-400 px-1">出發機場 (IATA)</label>
+                       <div className="space-y-3">
+                        <label className="text-xs font-bold uppercase tracking-widest text-slate-400 px-1">{t('trips.origin')} (IATA)</label>
                         <input 
                           type="text" 
-                          placeholder="例如 TPE" 
+                          placeholder={`${t('trips.placeholderAirport')}`} 
+                          value={formData.origin}
+                          onChange={e => setFormData({...formData, origin: e.target.value})}
                           className="w-full p-4 glass border border-white/40 rounded-2xl focus:ring-2 focus:ring-primary/20 outline-none font-medium"
                         />
                       </div>
                       <div className="space-y-3">
-                        <label className="text-xs font-bold uppercase tracking-widest text-slate-400 px-1">目的地機場 (IATA)</label>
+                        <label className="text-xs font-bold uppercase tracking-widest text-slate-400 px-1">{t('trips.destination')} (IATA)</label>
                         <input 
                           type="text" 
-                          placeholder="例如 LAX" 
+                          placeholder={`${t('trips.placeholderAirport')}`} 
+                          value={formData.destination}
+                          onChange={e => setFormData({...formData, destination: e.target.value})}
                           className="w-full p-4 glass border border-white/40 rounded-2xl focus:ring-2 focus:ring-primary/20 outline-none font-medium"
                         />
                       </div>
                       <div className="space-y-3">
-                        <label className="text-xs font-bold uppercase tracking-widest text-slate-400 px-1">飛行日期</label>
-                        <div className="relative">
-                          <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                          <input 
-                            type="date" 
-                            className="w-full pl-12 pr-4 py-4 glass border border-white/40 rounded-2xl focus:ring-2 focus:ring-primary/20 outline-none font-medium"
-                          />
+                        <label className="text-xs font-bold uppercase tracking-widest text-slate-400 px-1">{t('trips.date')} ({t('trips.dateRange')})</label>
+                        <div className="flex items-center gap-4 mb-2 ml-1">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input 
+                              type="radio" 
+                              checked={!formData.isRange} 
+                              onChange={() => setFormData({...formData, isRange: false})}
+                              className="text-primary focus:ring-primary"
+                            />
+                            <span className="text-xs font-bold text-slate-600">{t('trips.fixedDate')}</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input 
+                              type="radio" 
+                              checked={formData.isRange} 
+                              onChange={() => setFormData({...formData, isRange: true})}
+                              className="text-primary focus:ring-primary"
+                            />
+                            <span className="text-xs font-bold text-slate-600">{t('trips.dateRange')}</span>
+                          </label>
+                        </div>
+                        <div className="flex gap-2">
+                           <div className="relative flex-1">
+                            <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                            <input 
+                              type="date" 
+                              value={formData.date}
+                              onChange={e => setFormData({...formData, date: e.target.value})}
+                              className="w-full pl-12 pr-4 py-4 glass border border-white/40 rounded-2xl focus:ring-2 focus:ring-primary/20 outline-none font-medium text-sm"
+                            />
+                          </div>
+                          {formData.isRange && (
+                            <>
+                              <span className="flex items-center text-slate-400">—</span>
+                              <div className="relative flex-1">
+                                <input 
+                                  type="date" 
+                                  value={formData.dateEnd}
+                                  onChange={e => setFormData({...formData, dateEnd: e.target.value})}
+                                  className="w-full pl-6 pr-4 py-4 glass border border-white/40 rounded-2xl focus:ring-2 focus:ring-primary/20 outline-none font-medium text-sm"
+                                />
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                       <div className="space-y-3">
-                        <label className="text-xs font-bold uppercase tracking-widest text-slate-400 px-1">航班號碼 (選填)</label>
+                        <label className="text-xs font-bold uppercase tracking-widest text-slate-400 px-1">{t('trips.flightNum')}</label>
                         <input 
                           type="text" 
-                          placeholder="例如 CI008" 
+                          placeholder="e.g. CI008" 
+                          value={formData.flightNum}
+                          onChange={e => setFormData({...formData, flightNum: e.target.value})}
                           className="w-full p-4 glass border border-white/40 rounded-2xl focus:ring-2 focus:ring-primary/20 outline-none font-medium"
                         />
                       </div>
@@ -184,17 +376,17 @@ export function CreateTrip() {
                 {currentStep === 'requirements' && (
                   <div className="space-y-10">
                     <div className="space-y-4">
-                      <h2 className="text-2xl font-serif text-slate-900 font-light italic">您需要什麼樣的支援？</h2>
-                      <p className="text-slate-500 text-sm font-medium">這些需求將作為陪伴者評估是否能勝任的標準。</p>
+                      <h2 className="text-2xl font-serif text-slate-900 font-light italic">{t('trips.requirements')}</h2>
+                      <p className="text-slate-500 text-sm font-medium">{t('trips.create.reqDesc')}</p>
                     </div>
                     
                     <div className="grid grid-cols-1 gap-6">
                       {[
-                        { id: 'sideBySide', label: '需坐在被照護者旁邊', icon: <Plane className="h-5 w-5" /> },
-                        { id: 'assistMeal', label: '協助進餐與處理飛機餐', icon: <ClipboardCheck className="h-5 w-5" /> },
-                        { id: 'assistToilet', label: '協助如廁或清理', icon: <ChevronRight className="h-5 w-5" /> },
-                        { id: 'assistImmigration', label: '協助通關與提領行李', icon: <MapPin className="h-5 w-5" /> },
-                        { id: 'handoff', label: '目的地轉交給接機人', icon: <ArrowRight className="h-5 w-5" /> },
+                        { id: 'sideBySide', label: t('trips.labels.sideBySide'), icon: <Plane className="h-5 w-5" /> },
+                        { id: 'assistMeal', label: t('trips.labels.assistMeal'), icon: <ClipboardCheck className="h-5 w-5" /> },
+                        { id: 'assistToilet', label: t('trips.labels.assistToilet'), icon: <ChevronRight className="h-5 w-5" /> },
+                        { id: 'assistImmigration', label: t('trips.labels.assistImmigration'), icon: <MapPin className="h-5 w-5" /> },
+                        { id: 'handoffAtDestination', label: t('trips.labels.handoff'), icon: <ArrowRight className="h-5 w-5" /> },
                       ].map((item) => (
                         <label 
                           key={item.id} 
@@ -206,9 +398,33 @@ export function CreateTrip() {
                             </div>
                             <span className="font-bold text-slate-700 tracking-tight">{item.label}</span>
                           </div>
-                          <input type="checkbox" className="h-6 w-6 rounded-lg border-slate-300 text-primary focus:ring-primary bg-white/40" />
+                          <input 
+                            type="checkbox" 
+                            checked={formData.requirements[item.id as keyof typeof formData.requirements]}
+                            onChange={e => setFormData({
+                              ...formData, 
+                              requirements: {
+                                ...formData.requirements,
+                                [item.id]: e.target.checked
+                              }
+                            })}
+                            className="h-6 w-6 rounded-lg border-slate-300 text-primary focus:ring-primary bg-white/40" 
+                          />
                         </label>
                       ))}
+
+                      <div className="space-y-4 pt-6">
+                        <div className="flex items-center gap-2 px-1">
+                          <Settings className="h-4 w-4 text-slate-400" />
+                          <label className="text-xs font-bold uppercase tracking-widest text-slate-400">{t('trips.create.memo')}</label>
+                        </div>
+                        <textarea 
+                          placeholder={t('trips.create.memoPlaceholder')}
+                          value={formData.memo}
+                          onChange={e => setFormData({...formData, memo: e.target.value})}
+                          className="w-full p-5 glass border border-white/40 rounded-2xl focus:ring-2 focus:ring-primary/20 outline-none font-medium h-32 resize-none"
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
@@ -216,12 +432,12 @@ export function CreateTrip() {
                 {currentStep === 'budget' && (
                   <div className="space-y-10">
                     <div className="space-y-4">
-                      <h2 className="text-2xl font-serif text-slate-900 font-light italic">設定媒合預算</h2>
-                      <p className="text-slate-500 text-sm font-medium">陪伴費用通常與航程長短及任務困難度有關。</p>
+                      <h2 className="text-2xl font-serif text-slate-900 font-light italic">{t('trips.budget')}</h2>
+                      <p className="text-slate-500 text-sm font-medium">{t('trips.create.budgetDesc')}</p>
                     </div>
                     
                     <div className="space-y-8">
-                      <div className="flex gap-2 p-1.5 glass-dark rounded-2xl max-w-sm">
+                       <div className="flex gap-2 p-1.5 glass-dark rounded-2xl max-w-sm">
                         <button 
                           onClick={() => setFormData({...formData, budgetOption: 'range'})}
                           className={cn(
@@ -229,7 +445,7 @@ export function CreateTrip() {
                             formData.budgetOption === 'range' ? "bg-white text-teal-800 shadow-lg" : "text-slate-400 hover:text-slate-300"
                           )}
                         >
-                          指定預算區間
+                          {t('trips.create.specifyBudget')}
                         </button>
                         <button 
                           onClick={() => setFormData({...formData, budgetOption: 'open'})}
@@ -238,13 +454,13 @@ export function CreateTrip() {
                             formData.budgetOption === 'open' ? "bg-white text-teal-800 shadow-lg" : "text-slate-400 hover:text-slate-300"
                           )}
                         >
-                          開放報價
+                          {t('trips.create.openBudget')}
                         </button>
                       </div>
 
                       {formData.budgetOption === 'range' && (
                         <div className="flex items-center gap-6">
-                          <div className="flex-1 space-y-2">
+                           <div className="flex-1 space-y-2">
                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Min (TWD)</label>
                              <input 
                               type="number" 
@@ -265,18 +481,6 @@ export function CreateTrip() {
                           </div>
                         </div>
                       )}
-                      
-                      <div className="rounded-[2rem] glass p-8 border border-white/20 flex gap-6">
-                        <div className="h-12 w-12 shrink-0 rounded-2xl bg-orange-100 flex items-center justify-center text-orange-600 shadow-sm">
-                          <Wallet className="h-6 w-6" />
-                        </div>
-                        <div className="space-y-1">
-                          <p className="font-bold text-slate-800 text-lg tracking-tight">貼心提示</p>
-                          <p className="text-[13px] text-slate-500 leading-relaxed font-medium">
-                            對於長途航線（例如美加、歐洲），參考預算通常在 NT$8,000 - NT$15,000 之間。設定合理的預算能大幅提升媒合成功率。
-                          </p>
-                        </div>
-                      </div>
                     </div>
                   </div>
                 )}
@@ -287,36 +491,10 @@ export function CreateTrip() {
                       <CheckCircle2 className="h-12 w-12" />
                     </div>
                     <div className="space-y-4">
-                      <h2 className="text-3xl font-serif text-slate-900 font-light italic">一切就緒！</h2>
+                      <h2 className="text-3xl font-serif text-slate-900 font-light italic">{t('common.confirm')}</h2>
                       <p className="text-slate-500 max-w-sm mx-auto font-medium leading-relaxed">
-                        您的需求將被展示在平台，通過 KYC 驗證的陪伴者可以對您的旅程發起申請。
+                        {t('trips.create.confirmDesc')}
                       </p>
-                    </div>
-                    
-                    <div className="w-full max-w-md glass rounded-[2.5rem] p-10 border border-white/40 text-left space-y-6 relative overflow-hidden backdrop-blur-3xl shadow-xl">
-                       <div className="absolute top-0 right-0 p-6 opacity-5">
-                          <Plane className="h-32 w-32" />
-                       </div>
-                       <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-400">旅程摘要</h4>
-                       <div className="flex justify-between items-end border-b border-white/20 pb-8">
-                          <div className="space-y-1">
-                            <div className="text-3xl font-black text-slate-800 tracking-tighter">TPE → LAX</div>
-                            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">2026/05/15 · CI008</div>
-                          </div>
-                       </div>
-                       <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-4">
-                             <div className="h-10 w-10 rounded-full glass border border-white/50" />
-                             <div>
-                               <div className="text-sm font-bold text-slate-800">李小華</div>
-                               <div className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">被照護者</div>
-                             </div>
-                          </div>
-                          <div className="text-right">
-                             <div className="text-xl font-black text-teal-700 tracking-tight">{formatCurrency(formData.budgetMin)} - {formatCurrency(formData.budgetMax)}</div>
-                             <div className="text-[10px] text-slate-400 uppercase font-bold tracking-widest">預計費用</div>
-                          </div>
-                       </div>
                     </div>
                   </div>
                 )}
@@ -334,7 +512,7 @@ export function CreateTrip() {
                 )}
               >
                 <ChevronLeft className="h-5 w-5" />
-                上一步
+                {t('common.back')}
               </button>
               
               {currentStep !== 'confirm' ? (
@@ -342,20 +520,99 @@ export function CreateTrip() {
                   onClick={next}
                   className="flex items-center gap-2 px-10 py-4 bg-slate-900 text-white rounded-[1.25rem] font-bold hover:shadow-2xl hover:translate-x-1 transition-all text-sm uppercase tracking-widest"
                 >
-                  下一步
+                  {t('common.next')}
                   <ChevronRight className="h-5 w-5" />
                 </button>
               ) : (
                 <button 
-                  className="px-14 py-5 bg-primary text-white rounded-[1.5rem] font-bold hover:shadow-2xl hover:scale-105 transition-all text-base uppercase tracking-widest shadow-teal-200"
+                  onClick={handlePublish}
+                  disabled={isSubmitting}
+                  className="px-14 py-5 bg-primary text-white rounded-[1.5rem] font-bold hover:shadow-2xl hover:scale-105 transition-all text-base uppercase tracking-widest shadow-teal-200 disabled:opacity-50"
                 >
-                  發布陪伴請求
+                  {isSubmitting ? t('common.processing') : t('trips.publish')}
                 </button>
               )}
             </div>
           </div>
         </div>
       </div>
+      {/* Caretaker Modal */}
+      <AnimatePresence>
+        {isCaretakerModalOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md"
+            onClick={() => {
+              setIsCaretakerModalOpen(false);
+              setEditingCaretaker(null);
+            }}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-white/95 backdrop-blur-2xl rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl border border-white/50"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-8">
+                <h3 className="text-xl font-bold text-slate-800">
+                  {editingCaretaker ? t('trips.create.editCaretaker') : t('trips.create.addNew')}
+                </h3>
+                <button 
+                  onClick={() => {
+                    setIsCaretakerModalOpen(false);
+                    setEditingCaretaker(null);
+                  }} 
+                  className="text-slate-400 p-2 hover:text-slate-900 transition-colors"
+                >✕</button>
+              </div>
+              
+              <form onSubmit={handleCaretakerSubmit} className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">{t('trips.create.caretakerName')}</label>
+                  <input 
+                    type="text" 
+                    required 
+                    value={caretakerForm.fullName}
+                    onChange={e => setCaretakerForm({...caretakerForm, fullName: e.target.value})}
+                    className="w-full px-5 py-4 glass border border-white/40 rounded-2xl focus:ring-2 focus:ring-primary/20 outline-none font-medium text-sm" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">{t('trips.create.relationship')}</label>
+                  <input 
+                    type="text" 
+                    required 
+                    placeholder={t('trips.create.relationshipPlaceholder')}
+                    value={caretakerForm.relationship}
+                    onChange={e => setCaretakerForm({...caretakerForm, relationship: e.target.value})}
+                    className="w-full px-5 py-4 glass border border-white/40 rounded-2xl focus:ring-2 focus:ring-primary/20 outline-none font-medium text-sm" 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">{t('trips.create.birthDate')}</label>
+                  <input 
+                    type="date" 
+                    required 
+                    value={caretakerForm.birthDate}
+                    onChange={e => setCaretakerForm({...caretakerForm, birthDate: e.target.value})}
+                    className="w-full px-5 py-4 glass border border-white/40 rounded-2xl focus:ring-2 focus:ring-primary/20 outline-none font-medium text-sm" 
+                  />
+                </div>
+                
+                <button 
+                  type="submit"
+                  className="w-full py-4.5 bg-slate-900 text-white font-bold rounded-2xl hover:bg-primary transition-all shadow-xl"
+                >
+                  {t('common.save')}
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

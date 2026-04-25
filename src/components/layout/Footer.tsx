@@ -1,7 +1,10 @@
 import { Link } from 'react-router-dom';
 import { Plane, Facebook, Instagram, Mail } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export function Footer() {
+  const { t } = useTranslation();
+
   return (
     <footer className="glass-footer text-slate-600">
       <div className="container mx-auto px-4 py-16">
@@ -12,11 +15,11 @@ export function Footer() {
                 <Plane className="h-5 w-5 text-white" />
               </div>
               <span className="font-sans text-lg font-bold tracking-tight text-teal-900">
-                FlyCompanion <span className="font-normal text-teal-600/80 italic">飛行陪伴</span>
+                FlyCompanion <span className="font-normal text-teal-600/80 italic">{t('nav.howItWorks')}</span>
               </span>
             </Link>
             <p className="max-w-xs text-sm leading-relaxed text-slate-500">
-              讓每一段旅程都有人陪伴，讓每一份擔心都能放下。專業的飛行陪伴媒合平台。
+              {t('footer.tagline')}
             </p>
             <div className="flex gap-4">
               <Facebook className="h-5 w-5 cursor-pointer hover:text-primary transition-colors text-slate-400" />
@@ -26,40 +29,39 @@ export function Footer() {
           </div>
           
           <div>
-            <h3 className="mb-4 font-bold text-slate-800">服務內容</h3>
+            <h3 className="mb-4 font-bold text-slate-800">{t('footer.services.title')}</h3>
             <ul className="flex flex-col gap-2 text-sm text-slate-500">
-              <li className="hover:text-primary transition-colors cursor-pointer">陪同青少年飛行</li>
-              <li className="hover:text-primary transition-colors cursor-pointer">長輩旅途照護</li>
-              <li className="hover:text-primary transition-colors cursor-pointer">家庭飛行支援</li>
-              <li className="hover:text-primary transition-colors cursor-pointer">跨國接機交接</li>
+              <li className="hover:text-primary transition-colors cursor-pointer">{t('footer.services.teen')}</li>
+              <li className="hover:text-primary transition-colors cursor-pointer">{t('footer.services.senior')}</li>
+              <li className="hover:text-primary transition-colors cursor-pointer">{t('footer.services.family')}</li>
+              <li className="hover:text-primary transition-colors cursor-pointer">{t('footer.services.handoff')}</li>
             </ul>
           </div>
           
           <div>
-            <h3 className="mb-4 font-bold text-slate-800">平台規範</h3>
+            <h3 className="mb-4 font-bold text-slate-800">{t('footer.platform.title')}</h3>
             <ul className="flex flex-col gap-2 text-sm text-slate-500">
-              <li className="hover:text-primary transition-colors cursor-pointer">服務條款</li>
-              <li className="hover:text-primary transition-colors cursor-pointer">隱私權政策</li>
-              <li className="hover:text-primary transition-colors cursor-pointer">KYC 認證流程</li>
-              <li className="hover:text-primary transition-colors cursor-pointer">退款政策</li>
+              <li className="hover:text-primary transition-colors cursor-pointer">{t('footer.platform.terms')}</li>
+              <li className="hover:text-primary transition-colors cursor-pointer">{t('footer.platform.privacy')}</li>
+              <li className="hover:text-primary transition-colors cursor-pointer">{t('footer.platform.kyc')}</li>
+              <li className="hover:text-primary transition-colors cursor-pointer">{t('footer.platform.refunds')}</li>
             </ul>
           </div>
           
           <div>
-            <h3 className="mb-4 font-bold text-slate-800">聯絡我們</h3>
+            <h3 className="mb-4 font-bold text-slate-800">{t('footer.contact.title')}</h3>
             <p className="text-sm text-slate-500">
-              有任何問題或建議？<br />
-              歡迎通過電子郵件與我們聯繫。
+              {t('footer.contact.desc')}
             </p>
             <div className="mt-4 rounded-lg bg-white/40 p-4 border border-white/20">
-              <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">客服時段</p>
-              <p className="text-sm font-semibold text-slate-700">週一至週五 09:00 - 18:00</p>
+              <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">{t('footer.contact.hours')}</p>
+              <p className="text-sm font-semibold text-slate-700">{t('footer.contact.hoursVal')}</p>
             </div>
           </div>
         </div>
         
         <div className="mt-16 border-t border-slate-200 pt-8 text-center text-xs text-slate-400">
-          <p>© 2026 FlyCompanion 飛行陪伴平台. All rights reserved. 繁體中文 v1.0</p>
+          <p>© 2026 FlyCompanion {t('footer.rights')}</p>
         </div>
       </div>
     </footer>
