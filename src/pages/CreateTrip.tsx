@@ -152,10 +152,13 @@ export function CreateTrip() {
       };
       const tripId = await dbService.createDocument('trips', tripData);
       if (tripId) {
-        navigate('/dashboard');
+        alert(t('common.saveSuccess') || '發布成功！');
+        navigate('/find-trips');
       }
     } catch (error) {
-      console.error('Failed to publish trip:', error);
+      const err = error as Error;
+      console.error('Failed to publish trip:', err);
+      alert('發布失敗: ' + (err.message || '未知錯誤'));
     } finally {
       setIsSubmitting(false);
     }
@@ -299,7 +302,8 @@ export function CreateTrip() {
                           placeholder={`${t('trips.placeholderAirport')}`} 
                           value={formData.origin}
                           onChange={e => setFormData({...formData, origin: e.target.value})}
-                          className="w-full p-4 glass border border-white/40 rounded-2xl focus:ring-2 focus:ring-primary/20 outline-none font-medium"
+                          maxLength={3}
+                          className="w-full p-4 glass border border-white/40 rounded-2xl focus:ring-2 focus:ring-primary/20 outline-none font-medium text-center uppercase"
                         />
                       </div>
                       <div className="space-y-3">
@@ -309,7 +313,8 @@ export function CreateTrip() {
                           placeholder={`${t('trips.placeholderAirport')}`} 
                           value={formData.destination}
                           onChange={e => setFormData({...formData, destination: e.target.value})}
-                          className="w-full p-4 glass border border-white/40 rounded-2xl focus:ring-2 focus:ring-primary/20 outline-none font-medium"
+                          maxLength={3}
+                          className="w-full p-4 glass border border-white/40 rounded-2xl focus:ring-2 focus:ring-primary/20 outline-none font-medium text-center uppercase"
                         />
                       </div>
                       <div className="space-y-3">

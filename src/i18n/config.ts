@@ -18,7 +18,8 @@ const resources = {
         "delete": "刪除",
         "verified": "已實名認證",
         "unverified": "認證待補",
-        "status": "狀態"
+        "status": "狀態",
+        "saveSuccess": "發布成功！"
       },
       "nav": {
         "findTrips": "探索行程",
@@ -262,7 +263,8 @@ const resources = {
         "delete": "Delete",
         "verified": "Verified",
         "unverified": "Unverified",
-        "status": "Status"
+        "status": "Status",
+        "saveSuccess": "Published successfully!"
       },
       "nav": {
         "findTrips": "Find Trips",
@@ -506,7 +508,8 @@ const resources = {
         "delete": "削除",
         "verified": "本人確認済",
         "unverified": "未確認",
-        "status": "ステータス"
+        "status": "ステータス",
+        "saveSuccess": "正常に公開されました！"
       },
       "nav": {
         "findTrips": "旅を探す",
